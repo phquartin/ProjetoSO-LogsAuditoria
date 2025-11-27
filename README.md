@@ -1,34 +1,69 @@
 # ProjetoSO-LogsAuditoria
 
-# Guia de Simulação: Auditoria de Logs em Sistema Distribuído
+# Simulação de Auditoria Distribuída
 
-Este guia descreve os passos para executar, validar e encerrar a simulação de comunicação TCP/IP entre um container Cliente (Java/Spring Boot) e um container Servidor (PostgreSQL), com foco na persistência de logs de auditoria no Host.
+Projeto para validação de comunicação TCP/IP entre containers e persistência de logs no host.
 
-## 1. Pré-requisitos
+## 1. Estrutura do Projeto
+* **Máquina A (App):** Java 17 + Spring Boot (Cliente).
+* **Máquina B (DB):** PostgreSQL 15 (Servidor).
+* **Automação:** Script único (`start.sh`) que realiza build e deploy.
 
-* **SO:** Linux (Testado em Arch Linux e Ubuntu).
-* **Pacotes Necessários:**
-    * `git`
-    * `docker` e `docker-compose` (ou plugin `docker-compose-plugin`)
-    * `java-17-openjdk` (JDK 17)
-    * `maven`
+## 2. Pré-requisitos
+* Sistema Operacional Linux (Arch Linux, Ubuntu, Debian, etc).
+* Git instalado.
+* Conexão com a internet (para baixar imagens Docker e dependências Maven).
 
-## 2. Instalação e Configuração
+## 3. Como Rodar (Automação Completa)
 
-1.  **Clone o repositório:**
-    ```bash
-    git clone [https://github.com/phquartin/ProjetoSO-LogsAuditoria.git](https://github.com/phquartin/ProjetoSO-LogsAuditoria.git)
-    cd ProjetoSO-LogsAuditoria
-    ```
+Este repositório contém um script orquestrador que instala dependências (Maven, Docker), compila o código Java e inicia o ambiente.
 
-2.  **Conceda permissão de execução ao orquestrador:**
+1.  **Dê permissão de execução ao script:**
     ```bash
     chmod +x start.sh
     ```
 
-## 3. Execução da Simulação
+2.  **Execute o script:**
+    ```bash
+    ./start.sh
+    ```
+    *O script solicitará senha de `sudo` se precisar instalar o Docker ou Java.*
 
-Execute o script de automação única. Ele irá verificar dependências, compilar o código Java, construir as imagens Docker e iniciar o ambiente.
+3.  **Resultado Esperado:**
+    O script finalizará com a mensagem `>>> SUCESSO. Simulação rodando.` e criará a pasta `deploy/` contendo os containers ativos.
 
+    **O que o script faz:**
+    * Verifica e instala Java/Maven/Docker se necessário.
+    * Compila o projeto Java (`mvn package`).
+    * Gera o arquivo `docker-compose.yml`.
+    * Inicia os containers.
+
+## 4. Monitoramento e Logs
+
+A simulação gera logs persistentes no disco da sua máquina física. Abra terminais separados para visualizar:
+
+### A. Log de Auditoria (Arquivo Físico)
+Este arquivo persiste mesmo se os containers forem destruídos. Mostra o sucesso ou falha da conexão TCP.
 ```bash
-./start.sh
+tail -f deploy/logs/spring.log
+```
+
+### B. Logs do Container (Aplicação)
+Saída padrão do processo Java.
+```bash
+sudo docker logs -f maquina_a_app
+```
+
+## 5. Teste de Falha
+Para provar que o log funciona, derrube o banco de dados e veja o erro aparecer no arquivo físico:
+
+1.  Pare o banco: `sudo docker stop maquina_b_db`
+2.  Veja o log: `tail -f deploy/logs/spring.log` (Deverá mostrar erros de conexão).
+3.  Inicie o banco: `sudo docker start maquina_b_db` (A conexão deve voltar).
+
+## 6. Como Parar
+Para encerrar a simulação e remover os containers:
+```bash
+cd deploy
+sudo docker compose down
+```
