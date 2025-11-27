@@ -1,49 +1,50 @@
 #!/bin/bash
 set -e
 
-# Detecta gerenciador de pacotes (pacman para Arch, apt para Debian/Ubuntu)
+# Detecta gerenciador de pacotes e define pacotes
 if command -v pacman &> /dev/null; then
     PKG_MGR="pacman -S --noconfirm"
-    JAVA_PKG="jdk17-openjdk maven"
+    # Adicionado 'docker-compose' na lista
+    DEPENDENCIES="jdk17-openjdk maven docker docker-compose"
 elif command -v apt-get &> /dev/null; then
     PKG_MGR="apt-get install -y"
-    JAVA_PKG="openjdk-17-jdk maven"
+    DEPENDENCIES="openjdk-17-jdk maven docker.io docker-compose-plugin"
 else
-    echo "Gerenciador de pacotes não suportado automaticamente. Instale Java 17 e Maven manualmente."
+    echo "Gerenciador não suportado. Instale Java 17, Maven e Docker Compose manualmente."
     exit 1
 fi
 
-# 1. Instalação de Dependências (Java/Maven)
-if ! command -v mvn &> /dev/null; then
-    echo ">>> Instalando Maven e JDK..."
-    sudo $PKG_MGR $JAVA_PKG
-fi
+# 1. Instalação de Dependências
+echo ">>> Verificando e instalando dependências..."
+sudo $PKG_MGR $DEPENDENCIES
 
-# 2. Instalação do Docker (se necessário)
-if ! command -v docker &> /dev/null; then
-    echo ">>> Instalando Docker..."
-    curl -fsSL https://get.docker.com | sh
-    sudo systemctl enable --now docker
-fi
+# Habilita serviço Docker
+sudo systemctl enable --now docker
 
-# 3. Build do Projeto Java
+# 2. Build do Projeto Java
 echo ">>> Compilando aplicação Java..."
 mvn clean package -DskipTests -q
 JAR_PATH=$(find target -name "*.jar" | head -n 1)
 
-# 4. Preparação do Ambiente Docker
+if [ -z "$JAR_PATH" ]; then
+    echo "ERRO: Build falhou. Arquivo .jar não encontrado."
+    exit 1
+fi
+
+# 3. Preparação do Ambiente
 mkdir -p deploy/logs deploy/pgdata
 cp "$JAR_PATH" deploy/app.jar
 
-# 5. Criação do docker-compose.yml unificado
+# 4. Criação do docker-compose.yml
 cat <<EOF > deploy/docker-compose.yml
 version: '3.8'
 
 services:
-  # Simulando Maquina B
+  # Servidor Banco de Dados
   db_server:
     image: postgres:15-alpine
     container_name: maquina_b_db
+    restart: always
     environment:
       POSTGRES_USER: user_prod
       POSTGRES_PASSWORD: senha_forte
@@ -58,10 +59,11 @@ services:
       timeout: 5s
       retries: 5
 
-  # Simulando Maquina A
+  # Cliente Aplicação
   app_client:
     image: eclipse-temurin:17-jdk-alpine
     container_name: maquina_a_app
+    restart: always
     depends_on:
       db_server:
         condition: service_healthy
@@ -69,7 +71,7 @@ services:
       - ./app.jar:/app.jar
       - ./logs:/app/logs
     environment:
-      # Conecta usando o nome do serviço docker (DNS interno)
+      # Conecta usando o nome do serviço (DNS do Docker)
       SPRING_DATASOURCE_URL: jdbc:postgresql://db_server:5432/sistema_db
       SPRING_DATASOURCE_USERNAME: user_prod
       SPRING_DATASOURCE_PASSWORD: senha_forte
@@ -77,11 +79,18 @@ services:
     command: ["java", "-jar", "/app.jar"]
 EOF
 
-# 6. Execução
+# 5. Execução (Tenta com plugin v2, se falhar usa o v1 com hífen)
 echo ">>> Iniciando containers..."
 cd deploy
-sudo docker compose up -d
 
-echo ">>> TUDO PRONTO."
-echo ">>> Logs disponíveis em: $(pwd)/logs/spring.log"
-echo ">>> Para ver logs em tempo real: tail -f logs/spring.log"
+if docker compose version &> /dev/null; then
+    CMD="docker compose"
+else
+    CMD="docker-compose"
+fi
+
+echo ">>> Usando comando: $CMD"
+sudo $CMD up -d --force-recreate
+
+echo ">>> SUCESSO! O sistema está rodando."
+echo ">>> Acompanhe os logs com: tail -f logs/spring.log"
