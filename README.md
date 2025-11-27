@@ -67,3 +67,7 @@ Para encerrar a simulação e remover os containers:
 cd deploy
 sudo docker compose down
 ```
+
+## 7. Relatorio
+Veja o [Relatorio](RELATORIO.md)
+
